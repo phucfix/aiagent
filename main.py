@@ -36,7 +36,19 @@ def main():
         types.Content(role="user", parts=[types.Part(text=user_prompt)])
     ]
 
-    generate_content(client, messages, verbose)
+    try:
+        for _ in range(20):
+            response = generate_content(client, messages, verbose)
+            # If it returned the response.text property
+            if response:
+                # It's done, print this final response and break out of the loop
+                print(f"Final response:\n{response}")
+                break
+            
+    except Exception as e:
+        print(f"An error occurr: {e}")
+        sys.exit(2)
+        
 
 def generate_content(client, messages, verbose):
     # Get a response from the gemini-2.0-flash-001 model
@@ -50,6 +62,12 @@ def generate_content(client, messages, verbose):
         )
     )   
 
+    # The .candidates property of the response. It's a list of response variations (usually just one).
+    # It contains the equivalent of "I want to call get_files_info..."
+    # Add it to our conversation.
+    for candidate in response.candidates:
+        messages.append(candidate.content)
+
     if verbose:
         print("Prompt tokens:", response.usage_metadata.prompt_token_count)
         print("Response tokens:", response.usage_metadata.candidates_token_count)
@@ -59,7 +77,6 @@ def generate_content(client, messages, verbose):
 
     function_responses = []
     for function_call_part in response.function_calls:
-        print(f"Calling function: {function_call_part.name}({function_call_part.args})")
         function_call_result = call_function(function_call_part, verbose)
 
         # The types.Content that return from call_function should have a 
@@ -71,6 +88,16 @@ def generate_content(client, messages, verbose):
             raise Exception("empty function call result")
         if verbose:
             print(f"-> {function_call_result.parts[0].function_response.response}")
+        # After each actual function call, use the types.Content function to
+        # convert the function_responses into a message with a role of user and append it into your messages
+        messages.append(
+            types.Content(
+                role="user",
+                parts=[function_call_result.parts[0]]
+            )
+        )
+
+        function_responses.append(function_call_result.parts[0])
 
     if not function_responses:
         raise Exception("no function responses generated, exiting.")
